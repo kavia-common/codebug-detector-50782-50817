@@ -1,0 +1,4 @@
+{
+    "command": "npm run build",
+    "working_directory": "/home/kavia/workspace/code-generation/codebug-detector-50782-50817/bug_detector_frontend"
+}
