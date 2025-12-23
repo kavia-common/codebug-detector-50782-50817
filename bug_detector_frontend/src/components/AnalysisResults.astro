@@ -1,0 +1,274 @@
+---
+/**
+ * AnalysisResults Island shell
+ * Minimal SSR: avoid TS imports or complex props; all logic runs in client script.
+ */
+const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info'] as const;
+type Severity = typeof SEVERITIES[number];
+
+function sevColor(sev: Severity): string {
+  switch (sev) {
+    case 'critical': return 'var(--color-error)';
+    case 'high': return 'color-mix(in oklab, var(--color-error) 70%, var(--text))';
+    case 'medium': return 'color-mix(in oklab, var(--color-primary) 60%, var(--text))';
+    case 'low': return 'color-mix(in oklab, var(--color-primary) 40%, var(--text-muted))';
+    default: return 'var(--text-muted)';
+  }
+}
+---
+<div class="results-wrap" id="analysis-results" data-state="idle" data-has-island="false">
+  <div class="header">
+    <div class="title">Results</div>
+    <div class="summary">
+      <span class="chip total" title="Total findings">
+        <strong>0</strong> total
+      </span>
+      {SEVERITIES.map((s) => (
+        <span class={`chip sev ${s}`} style={`--chip-color:${sevColor(s)}`} title={`${s} severity`}>
+          {s}: 0
+        </span>
+      ))}
+    </div>
+  </div>
+
+  <div class="toolbar" role="group" aria-label="Filter by severity">
+    <button class="filter-chip active" data-filter="all" type="button">All</button>
+    {SEVERITIES.map(s => (
+      <button class="filter-chip" data-filter={s} type="button" aria-pressed="false">
+        <span class="dot" style={`background:${sevColor(s)}`}></span>{s}
+      </button>
+    ))}
+    <div class="toolbar-spacer"></div>
+    <button class="btn btn-secondary" id="btn-copy-summary" type="button" title="Copy summary">Copy summary</button>
+  </div>
+
+  <div class="content" id="results-list" aria-live="polite" role="region">
+    <div class="placeholder">
+      <div class="icon" aria-hidden="true">🔎</div>
+      <div class="title">No analysis yet</div>
+      <div class="text">Run “Analyze” to see potential bugs and suggestions here.</div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .results-wrap { display: grid; gap: 10px; }
+  .header {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border-bottom: 1px solid var(--border); padding-bottom: 8px;
+  }
+  .title { font-weight: 700; letter-spacing: .2px; font-size: 14px; }
+  .summary { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 10px; border-radius: 999px; border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 96%, var(--color-primary) 4%);
+    font-size: 12px; font-weight: 600; color: var(--text);
+  }
+  .chip.sev { color: var(--chip-color); background: color-mix(in oklab, var(--surface) 94%, var(--chip-color) 6%); }
+  .chip.total strong { color: var(--color-primary); }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; }
+  .toolbar-spacer { flex: 1; }
+  .filter-chip {
+    appearance: none; border: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 96%, var(--color-primary) 4%);
+    color: var(--text); padding: 6px 10px; border-radius: 999px; font-weight: 600; cursor: pointer;
+    transition: background-color .2s ease, border-color .2s ease, box-shadow .2s ease, transform .08s ease;
+    box-shadow: var(--shadow-sm); font-size: 12px; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .filter-chip .dot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+  .filter-chip:hover { background: color-mix(in oklab, var(--surface) 90%, var(--color-primary) 10%); border-color: color-mix(in oklab, var(--border) 40%, var(--color-primary)); box-shadow: var(--shadow-md); }
+  .filter-chip.active { background: color-mix(in oklab, var(--surface) 86%, var(--color-primary) 14%); border-color: color-mix(in oklab, var(--border) 60%, var(--color-primary)); }
+
+  .btn { appearance: none; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    padding: 8px 12px; border-radius: 10px; font-weight: 600; cursor: pointer;
+    transition: transform .08s ease, box-shadow .2s ease, background-color .2s ease, border-color .2s ease; box-shadow: var(--shadow-sm);
+    font-size: 12px;
+  }
+  .btn:hover { background: color-mix(in oklab, var(--surface) 90%, var(--color-primary) 10%); border-color: color-mix(in oklab, var(--border) 40%, var(--color-primary)); box-shadow: var(--shadow-md); }
+
+  .content { display: block; }
+
+  .placeholder, .loading, .error-card {
+    padding: 16px; border: 1px dashed color-mix(in oklab, var(--border) 70%, var(--text) 6%); border-radius: 12px;
+    background: color-mix(in oklab, var(--surface) 98%, var(--color-primary) 2%);
+    text-align: center;
+  }
+  .placeholder .icon { font-size: 20px; margin-bottom: 6px; }
+  .placeholder .title { font-weight: 700; margin-bottom: 4px; }
+  .placeholder .text { font-size: 13px; color: var(--text-muted); }
+
+  .loading { display: grid; place-items: center; gap: 8px; }
+  .spinner { width: 22px; height: 22px; border: 3px solid color-mix(in oklab, var(--surface) 70%, var(--color-primary) 30%); border-top-color: var(--color-primary); border-radius: 50%; animation: spin 1s linear infinite; }
+  .loading .text { font-size: 13px; color: var(--text-muted); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-card { border: 1px solid color-mix(in oklab, var(--color-error) 40%, var(--border)); background: color-mix(in oklab, var(--surface) 90%, var(--color-error) 10%); text-align: left; }
+  .error-title { font-weight: 700; color: var(--color-error); margin-bottom: 4px; }
+  .error-text { font-size: 13px; color: color-mix(in oklab, var(--color-error) 70%, var(--text)); }
+
+  .list { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  .item {
+    padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in oklab, var(--surface) 96%, rgba(37,99,235,0.06));
+    box-shadow: var(--shadow-sm);
+  }
+  .item-head { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; }
+  .sev-chip {
+    text-transform: capitalize; font-size: 11px; font-weight: 700; padding: 4px 8px; border-radius: 999px;
+    background: color-mix(in oklab, var(--surface) 88%, var(--sev) 12%); color: var(--sev);
+    border: 1px solid color-mix(in oklab, var(--sev) 50%, var(--border));
+  }
+  .item-title { font-weight: 700; font-size: 13px; color: var(--color-primary); }
+  .item-actions { display: inline-flex; gap: 6px; }
+  .icon-btn {
+    appearance: none; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    padding: 4px 8px; border-radius: 8px; cursor: pointer; transition: transform .08s ease, box-shadow .2s ease, background-color .2s ease, border-color .2s ease;
+  }
+  .icon-btn:hover { background: color-mix(in oklab, var(--surface) 90%, var(--color-primary) 10%); border-color: color-mix(in oklab, var(--border) 40%, var(--color-primary)); box-shadow: var(--shadow-md); }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+  .meta-pill { background: color-mix(in oklab, var(--surface) 94%, var(--color-primary) 6%); border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; }
+  .desc { font-size: 13px; color: var(--text); margin-top: 8px; }
+  .details { margin-top: 8px; }
+  .details summary { cursor: pointer; font-weight: 700; color: var(--text); }
+  .rec { margin-top: 6px; font-size: 13px; color: var(--text-muted); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .filter-chip, .btn, .icon-btn { transition: none; }
+  }
+</style>
+
+<script>
+  (function initAnalysisResults(){
+    const root = document.currentScript?.closest('#analysis-results');
+    if (!root) return;
+
+    const list = root.querySelector('#results-list');
+    const filterButtons = Array.from(root.querySelectorAll('.filter-chip'));
+    const copySummaryBtn = root.querySelector('#btn-copy-summary');
+
+    // Filtering
+    function applyFilter(sev) {
+      filterButtons.forEach(btn => {
+        const isActive = btn.getAttribute('data-filter') === sev || (sev === 'all' && btn.getAttribute('data-filter') === 'all');
+        if (btn.getAttribute('data-filter') === 'all') {
+          btn.classList.toggle('active', sev === 'all');
+          btn.setAttribute('aria-pressed', String(sev === 'all'));
+        } else {
+          const pressed = (btn.getAttribute('data-filter') === sev);
+          btn.classList.toggle('active', pressed);
+          btn.setAttribute('aria-pressed', String(pressed));
+        }
+      });
+
+      const items = root.querySelectorAll('.item');
+      items.forEach((el) => {
+        const s = el.getAttribute('data-severity') || 'info';
+        const show = (sev === 'all') || (s === sev);
+        el.setAttribute('data-hidden', show ? 'false' : 'true');
+        (el).style.display = show ? '' : 'none';
+      });
+
+      announce(sev === 'all' ? 'Showing all severities' : `Filtered by ${sev}`);
+    }
+
+    filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sev = btn.getAttribute('data-filter') || 'all';
+        applyFilter(sev);
+      });
+    });
+
+    // Copy summary
+    copySummaryBtn?.addEventListener('click', async () => {
+      try {
+        const summaryEl = root.querySelector('.summary');
+        const text = summaryEl ? summaryEl.textContent?.replace(/\s+/g,' ').trim() : 'No summary';
+        await navigator.clipboard.writeText(text || 'No summary');
+        announce('Copied summary to clipboard');
+      } catch {
+        announce('Failed to copy summary');
+      }
+    });
+
+    // Item actions: copy/share/toggle
+    root.addEventListener('click', async (e) => {
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (!target.matches('.icon-btn')) return;
+
+      const action = target.getAttribute('data-action');
+      const item = target.closest('.item');
+      if (!item) return;
+
+      if (action === 'copy') {
+        const id = item.getAttribute('data-id') || '';
+        const sev = item.getAttribute('data-severity') || '';
+        const title = (item.querySelector('.item-title')?.textContent || '').trim();
+        const desc = (item.querySelector('.desc')?.textContent || '').trim();
+        const rule = (item.querySelector('.meta-pill')?.textContent || '').trim();
+        const rec = (item.querySelector('.rec')?.textContent || '').trim();
+        const payload = `Finding ${id}
+Severity: ${sev}
+Title: ${title}
+${rule}
+Description: ${desc}
+Recommendation: ${rec}`;
+        try {
+          await navigator.clipboard.writeText(payload);
+          announce('Copied finding to clipboard');
+        } catch {
+          announce('Failed to copy finding');
+        }
+      } else if (action === 'share') {
+        try {
+          const id = item.getAttribute('data-id') || '';
+          const url = new URL(window.location.href);
+          url.hash = `finding-${id}`;
+          if (navigator.share) {
+            await navigator.share({ title: document.title, url: url.toString(), text: 'Bug Detector finding' });
+          } else {
+            await navigator.clipboard.writeText(url.toString());
+            announce('Copied share link to clipboard');
+          }
+        } catch {
+          announce('Failed to share link');
+        }
+      } else if (action === 'toggle') {
+        const details = item.querySelector('details');
+        if (details) {
+          const open = details.hasAttribute('open');
+          if (open) details.removeAttribute('open'); else details.setAttribute('open', '');
+          target.setAttribute('aria-expanded', String(!open));
+        }
+      }
+    });
+
+    // If URL has a finding hash, attempt to focus/expand
+    function focusFromHash() {
+      const hash = window.location.hash || '';
+      if (!hash.startsWith('#finding-')) return;
+      const id = hash.slice('#finding-'.length);
+      const el = root.querySelector(`[data-id="${id}"]`);
+      if (el) {
+        const details = el.querySelector('details');
+        if (details && !details.hasAttribute('open')) details.setAttribute('open','');
+        (el).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('highlight');
+        setTimeout(() => el.classList.remove('highlight'), 1200);
+      }
+    }
+    window.addEventListener('hashchange', focusFromHash);
+    focusFromHash();
+
+    function announce(message) {
+      try {
+        const live = document.getElementById('global-live');
+        if (live) {
+          live.textContent = '';
+          setTimeout(() => live.textContent = message, 10);
+        }
+      } catch {}
+    }
+  })();
+</script>

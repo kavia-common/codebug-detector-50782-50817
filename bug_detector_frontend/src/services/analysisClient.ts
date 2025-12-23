@@ -69,7 +69,7 @@ async function fetchWithTimeout(resource: string, options: RequestInit = {}, tim
  * Internal: normalize backend response to AnalysisResponse.
  * Accepts a payload that may already be in normalized shape or requires mapping.
  */
-function normalizeResponse(payload: any): AnalysisResponse {
+function normalizeResponse(payload: unknown): AnalysisResponse {
   if (!payload) {
     return {
       findings: [],
@@ -79,8 +79,8 @@ function normalizeResponse(payload: any): AnalysisResponse {
   }
 
   // If already in the expected shape, trust but verify minimally.
-  if (Array.isArray(payload.findings)) {
-    const findings = payload.findings.map(mapFinding);
+  if (Array.isArray((payload as { findings?: unknown }).findings)) {
+    const findings = (payload as { findings: unknown[] }).findings.map(mapFinding);
     return {
       findings,
       summary: payload.summary && typeof payload.summary === 'object'
@@ -99,7 +99,8 @@ function normalizeResponse(payload: any): AnalysisResponse {
   }
 
   // If backend returns different keys, try best-effort mapping
-  const rawFindings = (payload.issues || payload.results || payload.findings || []) as any[];
+  const p = payload as Record<string, unknown>;
+  const rawFindings = ((p?.issues as unknown) || (p?.results as unknown) || (p?.findings as unknown) || []) as unknown[];
   const findings = Array.isArray(rawFindings) ? rawFindings.map(mapFinding) : [];
   return {
     findings,
@@ -110,7 +111,7 @@ function normalizeResponse(payload: any): AnalysisResponse {
 /**
  * Internal: map a single raw finding into the AnalysisFinding shape.
  */
-function mapFinding(raw: any): AnalysisFinding {
+function mapFinding(raw: Record<string, unknown>): AnalysisFinding {
   const sev = (String(raw?.severity || raw?.level || 'info').toLowerCase() as Severity);
   const valid: Severity[] = ['info', 'low', 'medium', 'high', 'critical'];
   const severity: Severity = valid.includes(sev) ? sev : 'info';
@@ -137,8 +138,8 @@ function cryptoLikeRandomId(): string {
   try {
     // Prefer crypto if available
     if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-      // @ts-ignore
-      return crypto.randomUUID();
+      // @ts-expect-error: randomUUID may not be available in some environments; fallback provided below.
+      return (crypto as any).randomUUID();
     }
   } catch {
     // ignore
@@ -258,7 +259,7 @@ export async function analyze(snippet: string, language: string): Promise<Analys
 
     if (!resp.ok) {
       // Attempt to get server-provided error body for context
-      let serverErr: any = undefined;
+      let serverErr: unknown = undefined;
       try {
         serverErr = isJson ? await resp.json() : await resp.text();
       } catch {
@@ -275,9 +276,9 @@ export async function analyze(snippet: string, language: string): Promise<Analys
       };
     }
 
-    const data = isJson ? await resp.json() : await safeParseTextAsJson(await resp.text());
+    const data: unknown = isJson ? await resp.json() : await safeParseTextAsJson(await resp.text());
     return normalizeResponse(data);
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Handle network errors & aborts
     const isAbort = err?.name === 'AbortError';
     return {
@@ -295,7 +296,7 @@ export async function analyze(snippet: string, language: string): Promise<Analys
 /**
  * Attempt to parse text as JSON; fallback to a basic envelope if parsing fails.
  */
-function safeParseTextAsJson(text: string): any {
+function safeParseTextAsJson(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
@@ -321,10 +322,10 @@ function mapHttpErrorMessage(status: number): string {
  */
 function processErrorDetails(err: unknown): unknown {
   if (err && typeof err === 'object') {
-    const anyErr = err as any;
+    const anyErr = err as { name?: unknown; message?: unknown; stack?: unknown };
     return {
-      name: anyErr.name,
-      message: anyErr.message,
+      name: typeof anyErr.name === 'string' ? anyErr.name : undefined,
+      message: typeof anyErr.message === 'string' ? anyErr.message : 'Unknown error',
       stack: anyErr.stack ? String(anyErr.stack).split('\n').slice(0, 3).join('\n') : undefined,
     };
   }

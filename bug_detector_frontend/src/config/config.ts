@@ -19,7 +19,7 @@ export function getConfig() {
   // PUBLIC_NEXT_TELEMETRY_DISABLED, PUBLIC_ENABLE_SOURCE_MAPS, PUBLIC_PORT, PUBLIC_TRUST_PROXY,
   // PUBLIC_LOG_LEVEL, PUBLIC_HEALTHCHECK_PATH, PUBLIC_FEATURE_FLAGS, PUBLIC_EXPERIMENTS_ENABLED
 
-  const env = (import.meta as any).env ?? import.meta.env;
+  const env: Record<string, unknown> = ((import.meta as unknown) as { env?: Record<string, unknown> }).env ?? (import.meta as any).env;
 
   const apiBaseRaw = (env?.PUBLIC_API_BASE as string | undefined)?.trim();
   const backendUrlRaw = (env?.PUBLIC_BACKEND_URL as string | undefined)?.trim();

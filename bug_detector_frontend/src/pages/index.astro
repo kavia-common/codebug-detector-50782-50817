@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout.astro';
 import CodeInput from '../components/CodeInput.astro';
 import LanguageSelector from '../components/LanguageSelector.astro';
 import FileDrop from '../components/FileDrop.astro';
+import AnalysisResults from '../components/AnalysisResults.astro';
 ---
 
 <Layout>
@@ -38,12 +39,7 @@ import FileDrop from '../components/FileDrop.astro';
         <div class="panel-title">Results</div>
       </div>
       <div class="panel-body">
-        <div id="results" class="result-list" aria-live="polite" role="region">
-          <div class="result-item">
-            <div class="result-title">No analysis yet</div>
-            <div class="result-text">Run “Analyze” to see potential bugs and suggestions here.</div>
-          </div>
-        </div>
+        <AnalysisResults />
       </div>
     </aside>
   </section>
@@ -79,7 +75,7 @@ import FileDrop from '../components/FileDrop.astro';
     (function() {
       const codeField = document.getElementById('code-editor');
       const langSelect = document.getElementById('lang-select');
-      const results = document.getElementById('results');
+      const resultsPanel = document.getElementById('results-panel');
 
       const btnAnalyze = document.getElementById('btn-analyze');
       const btnClear = document.getElementById('btn-clear');
@@ -102,63 +98,79 @@ import FileDrop from '../components/FileDrop.astro';
         return sel?.value || 'javascript';
       }
 
-      function renderResults(payload) {
-        if (!results) return;
-        results.innerHTML = '';
-        if (payload?.error) {
-          const item = document.createElement('div');
-          item.className = 'result-item';
-          item.innerHTML = '<div class="result-title" style="color: var(--color-error)">Error</div>' +
-            '<div class="result-text"></div>';
-          item.querySelector('.result-text').textContent = payload.error.message || 'Unknown error';
-          results.appendChild(item);
-          return;
-        }
-        const findings = payload?.findings || [];
-        if (!findings.length) {
-          const item = document.createElement('div');
-          item.className = 'result-item';
-          item.innerHTML = '<div class="result-title">No findings</div>' +
-            '<div class="result-text">No issues detected.</div>';
-          results.appendChild(item);
-          return;
-        }
-        for (const f of findings) {
-          const item = document.createElement('div');
-          item.className = 'result-item';
-          const sevColor = f.severity === 'critical' ? 'var(--color-error)'
-                           : f.severity === 'high' ? 'color-mix(in oklab, var(--color-error) 70%, var(--text))'
-                           : 'var(--color-primary)';
-          item.innerHTML = `
-            <div class="result-title" style="color:${sevColor}">${f.title}</div>
-            <div class="result-text">${f.description}</div>
-            <div class="result-text" style="margin-top:6px"><strong>Severity:</strong> ${f.severity} · <strong>Rule:</strong> ${f.rule}</div>
-            <div class="result-text" style="margin-top:6px"><strong>Recommendation:</strong> ${f.recommendation}</div>
-          `;
-          results.appendChild(item);
+      function renderAnalysisState(state, data) {
+        const comp = resultsPanel?.querySelector('#analysis-results');
+        if (!comp) return;
+
+        comp.setAttribute('data-state', state);
+
+        // Rerender contents minimally by swapping the inner region when needed
+        // But our component manages its DOM; we will replace entire component to pass new props
+        // Simpler approach: rebuild inner content by programmatic events per minimal API.
+
+        // For states, we can set custom events that the component listens to in future; for now
+        // we will just replace the component via outerHTML.
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = comp.outerHTML;
+      }
+
+      function mountResults(state, response, errorMessage) {
+        const host = resultsPanel?.querySelector('.panel-body');
+        if (!host) return;
+        // Remove existing component
+        const existing = host.querySelector('#analysis-results')?.parentElement;
+        // We'll inject a fresh instance by writing an HTML stub; since Astro islands are already mounted,
+        // we will interact instead with the existing island by sending a custom event carrying the new state.
+        const el = host.querySelector('#analysis-results');
+        if (el) {
+          const evt = new CustomEvent('analysis:update', { detail: { state, response, errorMessage }, bubbles: true });
+          el.dispatchEvent(evt);
         }
       }
+
+      // Enhance AnalysisResults island with an update channel
+      document.addEventListener('analysis:request-initial', () => {
+        const el = document.getElementById('analysis-results');
+        if (el) {
+          const evt = new CustomEvent('analysis:update', { detail: { state: 'idle' }, bubbles: true });
+          el.dispatchEvent(evt);
+        }
+      });
 
       btnAnalyze?.addEventListener('click', async () => {
         const code = getCodeValue().trim();
         const language = getLanguageValue();
+        const el = document.getElementById('analysis-results');
+
         if (!code) {
+          if (el) {
+            const evt = new CustomEvent('analysis:update', { detail: { state: 'error', response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } }, errorMessage: 'Please paste code before analyzing.' }, bubbles: true });
+            el.dispatchEvent(evt);
+          }
           const live = document.getElementById('global-live');
           if (live) live.textContent = 'Please paste code before analyzing.';
-          const emptyNode = document.createElement('div');
-          emptyNode.className = 'result-item';
-          emptyNode.innerHTML = '<div class="result-title">No code</div><div class="result-text">Paste some code to analyze.</div>';
-          results.innerHTML = '';
-          results.appendChild(emptyNode);
           return;
         }
+
         btnAnalyze.setAttribute('disabled', 'true');
         btnAnalyze.textContent = 'Analyzing...';
+
+        if (el) {
+          const evt = new CustomEvent('analysis:update', { detail: { state: 'loading' }, bubbles: true });
+          el.dispatchEvent(evt);
+        }
+
         try {
           const res = await analyze(code, language);
-          renderResults(res);
+          if (el) {
+            const evt = new CustomEvent('analysis:update', { detail: { state: 'ready', response: res }, bubbles: true });
+            el.dispatchEvent(evt);
+          }
         } catch (e) {
-          renderResults({ findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } }, error: { message: 'Unexpected error' } });
+          if (el) {
+            const evt = new CustomEvent('analysis:update', { detail: { state: 'error', response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } }, errorMessage: 'Unexpected error' }, bubbles: true });
+            el.dispatchEvent(evt);
+          }
         } finally {
           btnAnalyze.removeAttribute('disabled');
           btnAnalyze.textContent = 'Analyze';
@@ -167,12 +179,11 @@ import FileDrop from '../components/FileDrop.astro';
 
       btnClear?.addEventListener('click', () => {
         setCodeValue('');
-        results.innerHTML = `
-          <div class="result-item">
-            <div class="result-title">Cleared</div>
-            <div class="result-text">Editor content cleared.</div>
-          </div>
-        `;
+        const el = document.getElementById('analysis-results');
+        if (el) {
+          const evt = new CustomEvent('analysis:update', { detail: { state: 'idle', response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } } }, bubbles: true });
+          el.dispatchEvent(evt);
+        }
       });
 
       btnSample?.addEventListener('click', () => {
@@ -187,6 +198,143 @@ function run(code) {
         const live = document.getElementById('global-live');
         if (live) live.textContent = 'Loaded sample code into editor.';
       });
+
+      // Wire island update handling
+      (function wireIslandUpdates() {
+        const el = document.getElementById('analysis-results');
+        if (!el) return;
+
+        el.addEventListener('analysis:update', (e) => {
+          const detail = e && (e as CustomEvent).detail || {};
+          const state = detail.state || 'idle';
+          const response = detail.response || null;
+          const errorMessage = detail.errorMessage || null;
+
+          // Update DOM inside the island by replacing core content via a simple state machine:
+          // We mirror the logic of the component by updating attributes and re-populating the content area.
+          el.setAttribute('data-state', state);
+
+          // Rebuild the list content region if present
+          const listRegion = el.querySelector('#results-list');
+          if (!listRegion) return;
+
+          function textEl(cls, title, text) {
+            const wrap = document.createElement('div');
+            wrap.className = cls;
+            if (cls === 'loading') {
+              wrap.innerHTML = '<div class="spinner" aria-hidden="true"></div><div class="text"></div>';
+              wrap.querySelector('.text').textContent = text;
+            } else if (cls === 'error-card') {
+              wrap.innerHTML = '<div class="error-title"></div><div class="error-text"></div>';
+              wrap.querySelector('.error-title').textContent = title;
+              wrap.querySelector('.error-text').textContent = text;
+            } else if (cls === 'placeholder') {
+              wrap.innerHTML = `<div class="icon" aria-hidden="true">🔎</div><div class="title"></div><div class="text"></div>`;
+              wrap.querySelector('.title').textContent = title;
+              wrap.querySelector('.text').textContent = text;
+            }
+            return wrap;
+          }
+
+          // Update summary chips
+          const totalChip = el.querySelector('.chip.total strong');
+          const sevChips = el.querySelectorAll('.chip.sev');
+          const sevOrder = ['critical','high','medium','low','info'];
+          if (response && response.summary) {
+            if (totalChip) totalChip.textContent = String(response.summary.total);
+            sevChips.forEach((chip) => {
+              const label = chip.textContent || '';
+              const found = sevOrder.find(s => label && label.toLowerCase().includes(`${s}`));
+              if (found) {
+                chip.textContent = `${found}: ${response.summary.bySeverity[found]}`;
+              }
+            });
+          } else {
+            if (totalChip) totalChip.textContent = '0';
+            sevChips.forEach((chip) => {
+              const label = chip.textContent || '';
+              const found = sevOrder.find(s => label && label.toLowerCase().includes(`${s}`));
+              if (found) chip.textContent = `${found}: 0`;
+            });
+          }
+
+          // Clear current content
+          listRegion.innerHTML = '';
+
+          if (state === 'idle') {
+            listRegion.appendChild(textEl('placeholder', 'No analysis yet', 'Run “Analyze” to see potential bugs and suggestions here.'));
+            return;
+          }
+          if (state === 'loading') {
+            listRegion.appendChild(textEl('loading', '', 'Analyzing your code…'));
+            return;
+          }
+          if (state === 'error') {
+            listRegion.appendChild(textEl('error-card', 'Error', errorMessage || (response?.error?.message || 'Unexpected error')));
+            return;
+          }
+          const findings = response?.findings || [];
+          if (!findings.length) {
+            listRegion.appendChild(textEl('placeholder', 'No findings', 'No issues detected.'));
+            return;
+          }
+
+          // Render findings list
+          const ul = document.createElement('ul');
+          ul.className = 'list';
+          function sevColor(sev) {
+            switch (sev) {
+              case 'critical': return getComputedStyle(document.documentElement).getPropertyValue('--color-error') || 'crimson';
+              case 'high': return 'color-mix(in oklab, var(--color-error) 70%, var(--text))';
+              case 'medium': return 'color-mix(in oklab, var(--color-primary) 60%, var(--text))';
+              case 'low': return 'color-mix(in oklab, var(--color-primary) 40%, var(--text-muted))';
+              default: return 'var(--text-muted)';
+            }
+          }
+          findings.forEach((f) => {
+            const li = document.createElement('li');
+            li.className = 'item';
+            li.setAttribute('data-severity', f.severity);
+            li.setAttribute('data-id', f.id);
+
+            li.innerHTML = `
+              <div class="item-head">
+                <span class="sev-chip ${f.severity}" style="--sev:${sevColor(f.severity)}">${f.severity}</span>
+                <div class="item-title"></div>
+                <div class="item-actions">
+                  <button class="icon-btn" data-action="copy" title="Copy finding" aria-label="Copy finding">📋</button>
+                  <button class="icon-btn" data-action="share" title="Share link to finding" aria-label="Share finding">🔗</button>
+                  <button class="icon-btn" data-action="toggle" title="Show details" aria-label="Toggle details" aria-expanded="false">➤</button>
+                </div>
+              </div>
+              <div class="meta">
+                <span class="meta-pill"><strong>Rule:</strong> ${f.rule}</span>
+                <span class="meta-pill"><strong>Lines:</strong> ${f.lineStart}${f.lineEnd !== f.lineStart ? `–${f.lineEnd}` : ''}</span>
+              </div>
+              <div class="desc"></div>
+              <details class="details">
+                <summary>Recommendation</summary>
+                <div class="rec"></div>
+              </details>
+            `;
+            const t = li.querySelector('.item-title'); if (t) t.textContent = f.title;
+            const d = li.querySelector('.desc'); if (d) d.textContent = f.description;
+            const r = li.querySelector('.rec'); if (r) r.textContent = f.recommendation;
+            ul.appendChild(li);
+          });
+          listRegion.appendChild(ul);
+
+          // Ensure active filter reapplies
+          const active = el.querySelector('.filter-chip.active');
+          const sev = active?.getAttribute('data-filter') || 'all';
+          const items = el.querySelectorAll('.item');
+          items.forEach((it) => {
+            const s = it.getAttribute('data-severity') || 'info';
+            const show = (sev === 'all') || (s === sev);
+            (it).style.display = show ? '' : 'none';
+          });
+        });
+      })();
     })();
   </script>
 </Layout>
