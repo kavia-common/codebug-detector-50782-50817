@@ -1,0 +1,120 @@
+---
+import { appConfig } from '../config/config';
+
+// Read config at render time; for client hydration, we keep it purely static and dismiss via client JS.
+const { isDemo, mode } = appConfig;
+const message = isDemo ? 'Demo mode: using mock analysis' : 'Connected to API';
+const tone = isDemo ? 'warning' : 'success';
+---
+{/*
+  StatusBanner.astro
+  Displays a top-of-page banner indicating current connectivity mode.
+  - Demo: amber/secondary accent
+  - Connected: green/success-like accent (aligned with Ocean Professional)
+  Dismissible per session via localStorage.
+*/}
+
+<div id="status-banner" class={`status-banner ${tone}`} role="status" aria-live="polite">
+  <div class="status-inner">
+    <span class="dot" aria-hidden="true"></span>
+    <span class="msg">{message}</span>
+    <button id="dismiss-status" class="dismiss" type="button" aria-label="Dismiss status banner" title="Dismiss">
+      ✕
+    </button>
+  </div>
+</div>
+
+<style>
+  .status-banner {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 90%, transparent);
+    backdrop-filter: saturate(160%) blur(8px);
+  }
+  .status-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .status-banner.success {
+    /* Use a subtle success treatment; Ocean Pro theme doesn't define green explicitly,
+       so we derive from primary with a green hue mix via color-mix if available, otherwise fallback. */
+    border-bottom-color: color-mix(in oklab, #10B981 30%, var(--border));
+    background: color-mix(in oklab, var(--surface) 85%, #10B981 15%);
+    color: color-mix(in oklab, #064E3B 70%, var(--text));
+  }
+  .status-banner.warning {
+    border-bottom-color: color-mix(in oklab, var(--color-secondary) 40%, var(--border));
+    background: color-mix(in oklab, var(--surface) 85%, var(--color-secondary) 15%);
+    color: color-mix(in oklab, #7C2D12 65%, var(--text));
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    display: inline-block;
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+  .success .dot { background: #10B981; } /* emerald-500 */
+  .warning .dot { background: var(--color-secondary); } /* amber accent */
+
+  .msg {
+    font-weight: 600;
+    letter-spacing: .2px;
+  }
+
+  .dismiss {
+    margin-left: auto;
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    color: inherit;
+    cursor: pointer;
+    transition: transform .08s ease, background-color .2s ease, border-color .2s ease, box-shadow .2s ease;
+    box-shadow: var(--shadow-sm);
+  }
+  .dismiss:hover {
+    background: color-mix(in oklab, var(--surface) 80%, rgba(0,0,0,0.02));
+    border-color: color-mix(in oklab, var(--border) 40%, var(--color-primary));
+    box-shadow: var(--shadow-md);
+  }
+  .dismiss:active { transform: translateY(1px); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dismiss { transition: none; }
+  }
+</style>
+
+<script>
+  // Simple, localStorage-based dismissal
+  (function () {
+    const KEY = 'status-banner:dismissed';
+    const banner = document.getElementById('status-banner');
+    const btn = document.getElementById('dismiss-status');
+
+    try {
+      const dismissed = localStorage.getItem(KEY) === '1';
+      if (dismissed && banner) {
+        banner.style.display = 'none';
+      }
+      if (btn) {
+        btn.addEventListener('click', () => {
+          if (banner) banner.style.display = 'none';
+          try { localStorage.setItem(KEY, '1'); } catch {}
+        });
+      }
+    } catch {
+      // Ignore storage errors and keep banner visible
+    }
+  })();
+</script>
