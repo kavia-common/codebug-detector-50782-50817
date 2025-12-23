@@ -28,6 +28,15 @@ import AnalysisResults from '../components/AnalysisResults.astro';
           <button id="btn-analyze" class="btn btn-primary" type="button" aria-describedby="analyze-hint">Analyze</button>
           <button id="btn-clear" class="btn" type="button">Clear</button>
           <button id="btn-sample" class="btn" type="button">Load Sample</button>
+
+          <!-- Recent snippets dropdown -->
+          <div class="recent-wrap">
+            <label for="recent-snippets" class="sr-only">Recent snippets</label>
+            <select id="recent-snippets" class="recent-select" title="Recent snippets (last 3)" aria-label="Recent snippets">
+              <option value="">Recent snippets…</option>
+            </select>
+            <button id="btn-load-recent" class="btn" type="button" title="Load selected recent snippet">Load</button>
+          </div>
         </div>
         <p id="analyze-hint" class="tip">Tip: In demo mode, results are simulated locally.</p>
       </div>
@@ -43,6 +52,9 @@ import AnalysisResults from '../components/AnalysisResults.astro';
       </div>
     </aside>
   </section>
+
+  <!-- Toast container -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <style>
     /* Accessibility helper */
@@ -67,12 +79,100 @@ import AnalysisResults from '../components/AnalysisResults.astro';
     @media (max-width: 640px) {
       .grid { grid-template-columns: 1fr; }
     }
+
+    /* Recent snippets UI */
+    .recent-wrap {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      margin-left: auto;
+    }
+    .recent-select {
+      appearance: none;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: color-mix(in oklab, var(--surface) 96%, var(--color-primary) 4%);
+      color: var(--text);
+      font-weight: 600;
+      outline: none;
+      transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+    }
+    .recent-select:focus {
+      border-color: color-mix(in oklab, var(--color-primary) 50%, var(--border));
+      box-shadow: 0 0 0 4px var(--ring);
+      background: color-mix(in oklab, var(--surface) 92%, var(--color-primary) 8%);
+    }
+
+    /* Toasts */
+    #toast-container {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 80;
+      display: grid;
+      gap: 8px;
+    }
+    .toast {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--color-primary);
+      padding: 10px 12px;
+      border-radius: 10px;
+      box-shadow: var(--shadow-lg);
+      min-width: 200px;
+      max-width: min(420px, 90vw);
+      animation: toast-in .18s ease-out;
+      font-size: 13px;
+    }
+    .toast.success { border-left-color: #10B981; } /* emerald-ish */
+    .toast.error { border-left-color: var(--color-error); }
+    .toast .close {
+      margin-left: auto;
+      background: transparent;
+      border: none;
+      color: inherit;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    @keyframes toast-in {
+      from { transform: translateY(8px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    /* Analyze button loading spinner */
+    .btn.loading {
+      position: relative;
+      pointer-events: none;
+      opacity: .8;
+    }
+    .btn.loading::after {
+      content: '';
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid color-mix(in oklab, var(--surface) 70%, var(--color-primary) 30%);
+      border-top-color: var(--color-primary);
+      animation: spin .9s linear infinite;
+    }
+    @keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
   </style>
 
   <script>
     import { analyze } from '../services/analysisClient';
 
     (function() {
+      const STORAGE_KEY = 'recent-snippets:v1';
+      const MAX_RECENTS = 3;
+
       const codeField = document.getElementById('code-editor');
       const langSelect = document.getElementById('lang-select');
       const resultsPanel = document.getElementById('results-panel');
@@ -81,109 +181,178 @@ import AnalysisResults from '../components/AnalysisResults.astro';
       const btnClear = document.getElementById('btn-clear');
       const btnSample = document.getElementById('btn-sample');
 
+      const recentSelect = document.getElementById('recent-snippets');
+      const btnLoadRecent = document.getElementById('btn-load-recent');
+
+      const toastContainer = document.getElementById('toast-container');
+
+      // State management
+      let currentState = 'idle'; // 'idle' | 'loading' | 'error' | 'ready'
+      function setState(next, payload = {}) {
+        currentState = next;
+        // Update AnalysisResults island
+        const el = document.getElementById('analysis-results');
+        if (el) {
+          const evt = new CustomEvent('analysis:update', { detail: { state: next, ...payload }, bubbles: true });
+          el.dispatchEvent(evt);
+        }
+        // Toggle loading styles on analyze button
+        if (btnAnalyze) {
+          if (next === 'loading') {
+            btnAnalyze.classList.add('loading');
+            btnAnalyze.setAttribute('disabled', 'true');
+            btnAnalyze.textContent = 'Analyzing...';
+          } else {
+            btnAnalyze.classList.remove('loading');
+            btnAnalyze.removeAttribute('disabled');
+            btnAnalyze.textContent = 'Analyze';
+          }
+        }
+      }
+
+      // Toasts
+      function showToast(message, type = 'success') {
+        if (!toastContainer) return;
+        const t = document.createElement('div');
+        t.className = `toast ${type}`;
+        const btn = document.createElement('button');
+        btn.className = 'close';
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Dismiss notification');
+        btn.textContent = '✕';
+        btn.addEventListener('click', () => t.remove());
+
+        const span = document.createElement('span');
+        span.textContent = message;
+
+        t.appendChild(span);
+        t.appendChild(btn);
+        toastContainer.appendChild(t);
+
+        // Auto-dismiss after 4s
+        setTimeout(() => t.remove(), 4000);
+      }
+
+      // Code/Language getters & setters
       function getCodeValue() {
         const ev = new CustomEvent('getvalue', { detail: { value: '' }, bubbles: true, cancelable: false });
         codeField?.dispatchEvent(ev);
         // @ts-ignore
         return ev.detail.value || '';
       }
-
       function setCodeValue(v) {
         const ev = new CustomEvent('setvalue', { detail: { value: v }, bubbles: true, cancelable: false });
         codeField?.dispatchEvent(ev);
       }
-
       function getLanguageValue() {
         const sel = (langSelect?.querySelector('select'));
         return sel?.value || 'javascript';
       }
-
-      function renderAnalysisState(state, data) {
-        const comp = resultsPanel?.querySelector('#analysis-results');
-        if (!comp) return;
-
-        comp.setAttribute('data-state', state);
-
-        // Rerender contents minimally by swapping the inner region when needed
-        // But our component manages its DOM; we will replace entire component to pass new props
-        // Simpler approach: rebuild inner content by programmatic events per minimal API.
-
-        // For states, we can set custom events that the component listens to in future; for now
-        // we will just replace the component via outerHTML.
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = comp.outerHTML;
+      function setLanguageValue(lang) {
+        const sel = (langSelect?.querySelector('select'));
+        if (sel) sel.value = lang;
       }
 
-      function mountResults(state, response, errorMessage) {
-        const host = resultsPanel?.querySelector('.panel-body');
-        if (!host) return;
-        // Remove existing component
-        const existing = host.querySelector('#analysis-results')?.parentElement;
-        // We'll inject a fresh instance by writing an HTML stub; since Astro islands are already mounted,
-        // we will interact instead with the existing island by sending a custom event carrying the new state.
-        const el = host.querySelector('#analysis-results');
-        if (el) {
-          const evt = new CustomEvent('analysis:update', { detail: { state, response, errorMessage }, bubbles: true });
-          el.dispatchEvent(evt);
+      // Recent snippets persistence
+      function loadRecents() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return [];
+          const arr = JSON.parse(raw);
+          return Array.isArray(arr) ? arr : [];
+        } catch {
+          return [];
         }
       }
+      function saveRecents(list) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, MAX_RECENTS)));
+        } catch {}
+      }
+      function addRecent(snippet, language) {
+        const clean = (snippet || '').trim();
+        if (!clean) return;
+        const now = Date.now();
+        const recents = loadRecents();
+        // De-dup by content+lang
+        const filtered = recents.filter(r => !(r.snippet === clean && r.language === language));
+        filtered.unshift({ snippet: clean, language, ts: now });
+        saveRecents(filtered);
+        populateRecentSelect();
+      }
+      function populateRecentSelect() {
+        if (!recentSelect) return;
+        const recents = loadRecents();
+        // Reset options
+        recentSelect.innerHTML = '';
+        const baseOpt = document.createElement('option');
+        baseOpt.value = '';
+        baseOpt.textContent = 'Recent snippets…';
+        recentSelect.appendChild(baseOpt);
 
-      // Enhance AnalysisResults island with an update channel
-      document.addEventListener('analysis:request-initial', () => {
-        const el = document.getElementById('analysis-results');
-        if (el) {
-          const evt = new CustomEvent('analysis:update', { detail: { state: 'idle' }, bubbles: true });
-          el.dispatchEvent(evt);
+        recents.forEach((r, idx) => {
+          const opt = document.createElement('option');
+          opt.value = String(idx);
+          const preview = r.snippet.split('\n')[0].slice(0, 48).replace(/\s+/g, ' ');
+          opt.textContent = `${r.language} • ${preview}${r.snippet.length > 48 ? '…' : ''}`;
+          recentSelect.appendChild(opt);
+        });
+      }
+
+      // Validation
+      function validateInput(code, language) {
+        if (!language || typeof language !== 'string') {
+          return 'Please select a language.';
         }
-      });
+        if (!code || !code.trim()) {
+          return 'Please paste code before analyzing.';
+        }
+        if (code.length > 200_000) {
+          return 'Snippet is too large to analyze. Please reduce its size.';
+        }
+        return null;
+      }
 
+      // Initial setup
+      populateRecentSelect();
+      setState('idle');
+
+      // Interactions
       btnAnalyze?.addEventListener('click', async () => {
-        const code = getCodeValue().trim();
+        const code = getCodeValue();
         const language = getLanguageValue();
-        const el = document.getElementById('analysis-results');
 
-        if (!code) {
-          if (el) {
-            const evt = new CustomEvent('analysis:update', { detail: { state: 'error', response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } }, errorMessage: 'Please paste code before analyzing.' }, bubbles: true });
-            el.dispatchEvent(evt);
-          }
+        const validationError = validateInput(code, language);
+        if (validationError) {
+          setState('error', { response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } }, errorMessage: validationError });
+          showToast(validationError, 'error');
           const live = document.getElementById('global-live');
-          if (live) live.textContent = 'Please paste code before analyzing.';
+          if (live) live.textContent = validationError;
           return;
         }
 
-        btnAnalyze.setAttribute('disabled', 'true');
-        btnAnalyze.textContent = 'Analyzing...';
-
-        if (el) {
-          const evt = new CustomEvent('analysis:update', { detail: { state: 'loading' }, bubbles: true });
-          el.dispatchEvent(evt);
-        }
+        setState('loading');
 
         try {
           const res = await analyze(code, language);
-          if (el) {
-            const evt = new CustomEvent('analysis:update', { detail: { state: 'ready', response: res }, bubbles: true });
-            el.dispatchEvent(evt);
+          if (res?.error) {
+            setState('error', { response: res, errorMessage: res.error.message || 'Analysis failed' });
+            showToast(res.error.message || 'Analysis failed', 'error');
+          } else {
+            setState('ready', { response: res });
+            showToast('Analysis complete', 'success');
+            // persist recent
+            addRecent(code, language);
           }
         } catch (e) {
-          if (el) {
-            const evt = new CustomEvent('analysis:update', { detail: { state: 'error', response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } }, errorMessage: 'Unexpected error' }, bubbles: true });
-            el.dispatchEvent(evt);
-          }
-        } finally {
-          btnAnalyze.removeAttribute('disabled');
-          btnAnalyze.textContent = 'Analyze';
+          setState('error', { response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } }, errorMessage: 'Unexpected error during analysis' } );
+          showToast('Unexpected error during analysis', 'error');
         }
       });
 
       btnClear?.addEventListener('click', () => {
         setCodeValue('');
-        const el = document.getElementById('analysis-results');
-        if (el) {
-          const evt = new CustomEvent('analysis:update', { detail: { state: 'idle', response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } } }, bubbles: true });
-          el.dispatchEvent(evt);
-        }
+        setState('idle', { response: { findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } } } });
       });
 
       btnSample?.addEventListener('click', () => {
@@ -195,8 +364,29 @@ function run(code) {
 }
 `;
         setCodeValue(sample);
+        showToast('Loaded sample code', 'success');
         const live = document.getElementById('global-live');
         if (live) live.textContent = 'Loaded sample code into editor.';
+      });
+
+      btnLoadRecent?.addEventListener('click', () => {
+        if (!recentSelect) return;
+        const idx = Number(recentSelect.value);
+        if (!Number.isFinite(idx) || idx < 0) {
+          showToast('Select a recent snippet first', 'error');
+          return;
+        }
+        const recents = loadRecents();
+        const item = recents[idx];
+        if (!item) {
+          showToast('Unable to load the selected snippet', 'error');
+          return;
+        }
+        setLanguageValue(item.language);
+        setCodeValue(item.snippet);
+        showToast('Loaded recent snippet', 'success');
+        const live = document.getElementById('global-live');
+        if (live) live.textContent = 'Loaded recent snippet into editor.';
       });
 
       // Wire island update handling
@@ -210,8 +400,7 @@ function run(code) {
           const response = detail.response || null;
           const errorMessage = detail.errorMessage || null;
 
-          // Update DOM inside the island by replacing core content via a simple state machine:
-          // We mirror the logic of the component by updating attributes and re-populating the content area.
+          // Update attribute for CSS/logic
           el.setAttribute('data-state', state);
 
           // Rebuild the list content region if present
