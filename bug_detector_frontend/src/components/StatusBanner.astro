@@ -2,7 +2,7 @@
 import { appConfig } from '../config/config';
 
 // Read config at render time; for client hydration, we keep it purely static and dismiss via client JS.
-const { isDemo, mode } = appConfig;
+const { isDemo } = appConfig;
 const message = isDemo ? 'Demo mode: using mock analysis' : 'Connected to API';
 const tone = isDemo ? 'warning' : 'success';
 ---
@@ -44,8 +44,6 @@ const tone = isDemo ? 'warning' : 'success';
   }
 
   .status-banner.success {
-    /* Use a subtle success treatment; Ocean Pro theme doesn't define green explicitly,
-       so we derive from primary with a green hue mix via color-mix if available, otherwise fallback. */
     border-bottom-color: color-mix(in oklab, #10B981 30%, var(--border));
     background: color-mix(in oklab, var(--surface) 85%, #10B981 15%);
     color: color-mix(in oklab, #064E3B 70%, var(--text));
@@ -87,6 +85,10 @@ const tone = isDemo ? 'warning' : 'success';
     background: color-mix(in oklab, var(--surface) 80%, rgba(0,0,0,0.02));
     border-color: color-mix(in oklab, var(--border) 40%, var(--color-primary));
     box-shadow: var(--shadow-md);
+  }
+  .dismiss:focus-visible {
+    outline: 3px solid transparent;
+    box-shadow: 0 0 0 4px var(--ring);
   }
   .dismiss:active { transform: translateY(1px); }
 
