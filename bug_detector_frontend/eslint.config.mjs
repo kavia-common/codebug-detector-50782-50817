@@ -29,6 +29,7 @@ export default [
   // JS files config (same as before)
   {
     files: ['**/*.js', '**/*.jsx'],
+    ignores: ['.astro/**', 'dist/**'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

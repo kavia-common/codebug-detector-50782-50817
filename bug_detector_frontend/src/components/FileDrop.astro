@@ -1,0 +1,183 @@
+---
+import { formatBytes, uid } from './utils';
+
+interface Props {
+  id?: string;
+  label?: string;
+  accept?: string;
+  maxSizeBytes?: number;
+  error?: string;
+  hint?: string;
+}
+
+const {
+  id = uid('filedrop'),
+  label = 'Upload file',
+  accept = '.js,.ts,.py,.java,.rb,.php,.go,.rs,.cpp,.c,.cs,.kt,.swift,.sh,.txt',
+  maxSizeBytes = 1024 * 1024 * 2, // 2MB
+  error,
+  hint = 'Drag & drop a code file here, or click to browse.',
+} = Astro.props;
+
+const hasError = Boolean(error);
+const hintId = `${id}-hint`;
+const errorId = `${id}-error`;
+const describedBy = [hint ? hintId : null, hasError ? errorId : null].filter(Boolean).join(' ') || undefined;
+---
+
+<div class="filedrop" id={id} role="group" aria-labelledby={`${id}-label`} data-max-bytes={String(maxSizeBytes)}>
+  <div class="label-row">
+    <span class="label" id={`${id}-label`}>{label}</span>
+    <span class="max">Max {formatBytes(maxSizeBytes)}</span>
+  </div>
+
+  <div class={`drop-zone ${hasError ? 'invalid' : ''}`} tabindex="0" aria-describedby={describedBy}>
+    <input
+      id={`${id}-input`}
+      type="file"
+      class="input"
+      accept={accept}
+      aria-hidden="true"
+      tabindex="-1" />
+    <div class="drop-inner">
+      <div class="icon" aria-hidden="true">⬆️</div>
+      <div class="text">
+        <strong>Drop file</strong> or <button class="browse" type="button">browse</button>
+      </div>
+      <div class="sub">We’ll paste its content into the editor</div>
+    </div>
+  </div>
+
+  {hint && <p id={hintId} class="hint">{hint}</p>}
+  {hasError && <p id={errorId} role="alert" class="error">{error}</p>}
+</div>
+
+<style>
+  .label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .label { font-size: 13px; font-weight: 700; letter-spacing: .2px; }
+  .max { font-size: 12px; color: var(--text-muted); }
+
+  .drop-zone {
+    position: relative;
+    border: 1.5px dashed color-mix(in oklab, var(--border) 60%, var(--text) 5%);
+    background: color-mix(in oklab, var(--surface) 98%, var(--color-primary) 2%);
+    border-radius: 12px;
+    padding: 18px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    outline: none;
+    transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, transform .08s ease;
+  }
+  .drop-zone:focus {
+    border-color: color-mix(in oklab, var(--color-primary) 50%, var(--border));
+    box-shadow: 0 0 0 4px var(--ring);
+  }
+  .drop-zone.invalid {
+    border-color: color-mix(in oklab, var(--color-error) 60%, var(--border));
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-error) 25%, transparent);
+  }
+
+  .input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+  .drop-inner { color: var(--text-muted); }
+  .icon { font-size: 20px; margin-bottom: 6px; }
+  .text { font-size: 13px; }
+  .browse {
+    appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--color-primary);
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .sub { font-size: 12px; margin-top: 4px; }
+
+  .hint { font-size: 12px; color: var(--text-muted); margin: 6px 0 0; }
+  .error { font-size: 12px; color: var(--color-error); margin: 6px 0 0; font-weight: 600; }
+</style>
+
+<script>
+  (function() {
+    const root = document.currentScript?.closest('.filedrop');
+    if (!root) return;
+
+    const dropZone = root.querySelector('.drop-zone');
+    const fileInput = root.querySelector('input[type="file"]');
+    const browseBtn = root.querySelector('.browse');
+    const maxAttr = root.getAttribute('data-max-bytes');
+    const max = Number(maxAttr || '2097152'); // default 2MB
+
+    function handleFiles(files) {
+      const file = files && files[0];
+      if (!file) return;
+      if (file.size > max) {
+        if (dropZone) dropZone.classList.add('invalid');
+        announce(`File too large. Max size is ${max} bytes`);
+        root.dispatchEvent(new CustomEvent('fileerror', { detail: { message: 'File too large.' }, bubbles: true }));
+        return;
+      }
+      // Read and dispatch a custom event with the content
+      const reader = new FileReader();
+      reader.onload = () => {
+        const content = String(reader.result || '');
+        root.dispatchEvent(new CustomEvent('filecontent', { detail: { name: file.name, content }, bubbles: true }));
+        announce(`Loaded ${file.name}, ${file.size} bytes`);
+      };
+      reader.onerror = () => {
+        root.dispatchEvent(new CustomEvent('fileerror', { detail: { message: 'Failed to read file.' }, bubbles: true }));
+        announce('Failed to read file');
+      };
+      reader.readAsText(file);
+    }
+
+    function announce(message) {
+      try {
+        const live = document.getElementById('global-live');
+        if (live) {
+          live.textContent = '';
+          setTimeout(()=> live.textContent = message, 10);
+        }
+      } catch {}
+    }
+
+    if (browseBtn && fileInput) {
+      browseBtn.addEventListener('click', () => fileInput.click());
+    }
+    if (fileInput) {
+      fileInput.addEventListener('change', (e) => {
+        const input = e.target;
+        handleFiles(input.files);
+        input.value = ''; // reset
+      });
+    }
+    if (dropZone) {
+      ['dragenter','dragover'].forEach(evt => {
+        dropZone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.style.transform = 'scale(0.99)';
+          dropZone.style.background = 'color-mix(in oklab, var(--surface) 92%, var(--color-primary) 8%)';
+        });
+      });
+      ['dragleave','drop'].forEach(evt => {
+        dropZone.addEventListener(evt, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.style.transform = '';
+          dropZone.style.background = '';
+        });
+      });
+      dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        handleFiles(dt?.files);
+      });
+      dropZone.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          fileInput?.click();
+        }
+      });
+    }
+  })();
+</script>

@@ -1,33 +1,44 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import CodeInput from '../components/CodeInput.astro';
+import LanguageSelector from '../components/LanguageSelector.astro';
+import FileDrop from '../components/FileDrop.astro';
 ---
 
 <Layout>
+  <!-- Global live region for A11y announcements -->
+  <div id="global-live" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
   <section class="split">
     <!-- Code Input Panel -->
-    <article class="panel">
+    <article class="panel" id="code-panel">
       <div class="panel-header">
         <div class="panel-title">Code Input</div>
       </div>
       <div class="panel-body">
-        <label for="code" class="sr-only">Paste your code</label>
-        <textarea id="code" class="textarea" placeholder="Paste your code snippet here..."></textarea>
-        <div class="controls">
-          <button class="btn btn-primary" type="button">Analyze</button>
-          <button class="btn" type="button">Clear</button>
-          <button class="btn" type="button">Load Sample</button>
+        <div class="grid">
+          <LanguageSelector id="lang-select" hint="Choose the language to improve analysis accuracy." />
+          <FileDrop id="file-drop" label="Paste from file" />
         </div>
-        <p class="tip">Tip: Your code never leaves your browser in mock mode. Backend integration will be added later.</p>
+
+        <CodeInput id="code-editor" label="Your code" />
+
+        <div class="controls">
+          <button id="btn-analyze" class="btn btn-primary" type="button" aria-describedby="analyze-hint">Analyze</button>
+          <button id="btn-clear" class="btn" type="button">Clear</button>
+          <button id="btn-sample" class="btn" type="button">Load Sample</button>
+        </div>
+        <p id="analyze-hint" class="tip">Tip: In demo mode, results are simulated locally.</p>
       </div>
     </article>
 
     <!-- Results Panel -->
-    <aside class="panel">
+    <aside class="panel" id="results-panel">
       <div class="panel-header">
         <div class="panel-title">Results</div>
       </div>
       <div class="panel-body">
-        <div class="result-list">
+        <div id="results" class="result-list" aria-live="polite" role="region">
           <div class="result-item">
             <div class="result-title">No analysis yet</div>
             <div class="result-text">Run “Analyze” to see potential bugs and suggestions here.</div>
@@ -50,5 +61,132 @@ import Layout from '../layouts/Layout.astro';
       border: 0;
       white-space: nowrap;
     }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+    @media (max-width: 640px) {
+      .grid { grid-template-columns: 1fr; }
+    }
   </style>
+
+  <script>
+    import { analyze } from '../services/analysisClient';
+
+    (function() {
+      const codeField = document.getElementById('code-editor');
+      const langSelect = document.getElementById('lang-select');
+      const results = document.getElementById('results');
+
+      const btnAnalyze = document.getElementById('btn-analyze');
+      const btnClear = document.getElementById('btn-clear');
+      const btnSample = document.getElementById('btn-sample');
+
+      function getCodeValue() {
+        const ev = new CustomEvent('getvalue', { detail: { value: '' }, bubbles: true, cancelable: false });
+        codeField?.dispatchEvent(ev);
+        // @ts-ignore
+        return ev.detail.value || '';
+      }
+
+      function setCodeValue(v) {
+        const ev = new CustomEvent('setvalue', { detail: { value: v }, bubbles: true, cancelable: false });
+        codeField?.dispatchEvent(ev);
+      }
+
+      function getLanguageValue() {
+        const sel = (langSelect?.querySelector('select'));
+        return sel?.value || 'javascript';
+      }
+
+      function renderResults(payload) {
+        if (!results) return;
+        results.innerHTML = '';
+        if (payload?.error) {
+          const item = document.createElement('div');
+          item.className = 'result-item';
+          item.innerHTML = '<div class="result-title" style="color: var(--color-error)">Error</div>' +
+            '<div class="result-text"></div>';
+          item.querySelector('.result-text').textContent = payload.error.message || 'Unknown error';
+          results.appendChild(item);
+          return;
+        }
+        const findings = payload?.findings || [];
+        if (!findings.length) {
+          const item = document.createElement('div');
+          item.className = 'result-item';
+          item.innerHTML = '<div class="result-title">No findings</div>' +
+            '<div class="result-text">No issues detected.</div>';
+          results.appendChild(item);
+          return;
+        }
+        for (const f of findings) {
+          const item = document.createElement('div');
+          item.className = 'result-item';
+          const sevColor = f.severity === 'critical' ? 'var(--color-error)'
+                           : f.severity === 'high' ? 'color-mix(in oklab, var(--color-error) 70%, var(--text))'
+                           : 'var(--color-primary)';
+          item.innerHTML = `
+            <div class="result-title" style="color:${sevColor}">${f.title}</div>
+            <div class="result-text">${f.description}</div>
+            <div class="result-text" style="margin-top:6px"><strong>Severity:</strong> ${f.severity} · <strong>Rule:</strong> ${f.rule}</div>
+            <div class="result-text" style="margin-top:6px"><strong>Recommendation:</strong> ${f.recommendation}</div>
+          `;
+          results.appendChild(item);
+        }
+      }
+
+      btnAnalyze?.addEventListener('click', async () => {
+        const code = getCodeValue().trim();
+        const language = getLanguageValue();
+        if (!code) {
+          const live = document.getElementById('global-live');
+          if (live) live.textContent = 'Please paste code before analyzing.';
+          const emptyNode = document.createElement('div');
+          emptyNode.className = 'result-item';
+          emptyNode.innerHTML = '<div class="result-title">No code</div><div class="result-text">Paste some code to analyze.</div>';
+          results.innerHTML = '';
+          results.appendChild(emptyNode);
+          return;
+        }
+        btnAnalyze.setAttribute('disabled', 'true');
+        btnAnalyze.textContent = 'Analyzing...';
+        try {
+          const res = await analyze(code, language);
+          renderResults(res);
+        } catch (e) {
+          renderResults({ findings: [], summary: { total: 0, bySeverity: { info:0, low:0, medium:0, high:0, critical:0 } }, error: { message: 'Unexpected error' } });
+        } finally {
+          btnAnalyze.removeAttribute('disabled');
+          btnAnalyze.textContent = 'Analyze';
+        }
+      });
+
+      btnClear?.addEventListener('click', () => {
+        setCodeValue('');
+        results.innerHTML = `
+          <div class="result-item">
+            <div class="result-title">Cleared</div>
+            <div class="result-text">Editor content cleared.</div>
+          </div>
+        `;
+      });
+
+      btnSample?.addEventListener('click', () => {
+        const sample = `// Sample: risky JavaScript
+function run(code) {
+  // TODO: tighten security
+  var result = eval(code); // intentionally risky
+  return result;
+}
+`;
+        setCodeValue(sample);
+        const live = document.getElementById('global-live');
+        if (live) live.textContent = 'Loaded sample code into editor.';
+      });
+    })();
+  </script>
 </Layout>
