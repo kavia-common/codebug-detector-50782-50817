@@ -4,51 +4,303 @@ import ThemeToggle from '../components/ThemeToggle.astro';
 
 <!doctype html>
 <html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro Basics</title>
-	</head>
-	<body>
-		<ThemeToggle />
-		<slot />
-	</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Bug Detector — Ocean Professional</title>
+    <style>
+      :root {
+        /* Ocean Professional - Light */
+        --color-primary: #2563EB;   /* blue-600 */
+        --color-secondary: #F59E0B; /* amber-500 */
+        --color-error: #EF4444;
+        --bg: #f9fafb;              /* background */
+        --surface: #ffffff;         /* cards/surfaces */
+        --text: #111827;            /* gray-900 */
+        --text-muted: #4b5563;      /* gray-600 */
+        --border: rgba(17,24,39,0.08);
+        --ring: rgba(37,99,235,0.35);
+
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+        --shadow-md: 0 8px 24px rgba(0,0,0,0.08);
+        --shadow-lg: 0 12px 32px rgba(0,0,0,0.10);
+
+        --gradient: linear-gradient(135deg, rgba(59,130,246,0.10) 0%, rgba(249,250,251,1) 100%);
+      }
+
+      body.dark-theme {
+        /* Ocean Professional - Dark */
+        --color-primary: #60A5FA;   /* blue-400 */
+        --color-secondary: #FBBF24; /* amber-400 */
+        --color-error: #F87171;
+        --bg: #0B1220;
+        --surface: #101827;
+        --text: #E5E7EB;
+        --text-muted: #9CA3AF;
+        --border: rgba(255,255,255,0.08);
+        --ring: rgba(96,165,250,0.35);
+        --gradient: linear-gradient(135deg, rgba(59,130,246,0.10) 0%, rgba(16,24,39,1) 100%);
+      }
+
+      html, body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, Apple Color Emoji, Segoe UI Emoji;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        transition: background-color .3s ease, color .3s ease;
+      }
+
+      .app-shell {
+        min-height: 100dvh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        background-image: var(--gradient);
+      }
+
+      /* Header / Navbar */
+      header.navbar {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        backdrop-filter: saturate(160%) blur(8px);
+        background: color-mix(in oklab, var(--surface) 80%, transparent);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 14px 20px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+        color: inherit;
+      }
+      .brand-mark {
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 10px;
+        background: radial-gradient(120% 120% at 0% 0%, rgba(37,99,235,0.25) 0%, rgba(37,99,235,0.10) 50%, transparent 100%), var(--surface);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-sm);
+        color: var(--color-primary);
+        font-weight: 800;
+        font-size: 16px;
+      }
+      .brand-title {
+        font-weight: 700;
+        letter-spacing: .2px;
+      }
+      .nav-spacer { flex: 1; }
+      .nav-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .pill {
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: color-mix(in oklab, var(--color-primary) 10%, var(--surface));
+        color: var(--color-primary);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      /* Main content split */
+      main.app-main {
+        max-width: 1100px;
+        margin: 18px auto;
+        padding: 0 20px 24px;
+        width: 100%;
+      }
+      .split {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 18px;
+      }
+      @media (max-width: 980px) {
+        .split { grid-template-columns: 1fr; }
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
+        overflow: clip;
+      }
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in oklab, var(--surface) 95%, var(--color-primary) 5%);
+      }
+      .panel-title {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: .2px;
+      }
+      .panel-body {
+        padding: 14px;
+      }
+
+      .textarea {
+        width: 100%;
+        min-height: 240px;
+        resize: vertical;
+        padding: 12px 12px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: color-mix(in oklab, var(--surface) 96%, var(--color-primary) 4%);
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+        outline: none;
+        transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease;
+      }
+      .textarea:focus {
+        border-color: color-mix(in oklab, var(--color-primary) 50%, var(--border));
+        box-shadow: 0 0 0 4px var(--ring);
+        background: color-mix(in oklab, var(--surface) 92%, var(--color-primary) 8%);
+      }
+
+      .controls {
+        margin-top: 10px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform .08s ease, box-shadow .2s ease, background-color .2s ease, border-color .2s ease;
+        box-shadow: var(--shadow-sm);
+      }
+      .btn:hover {
+        background: color-mix(in oklab, var(--surface) 90%, var(--color-primary) 10%);
+        border-color: color-mix(in oklab, var(--border) 40%, var(--color-primary));
+        box-shadow: var(--shadow-md);
+      }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary {
+        background: color-mix(in oklab, var(--color-primary) 16%, var(--surface));
+        color: var(--text);
+        border-color: color-mix(in oklab, var(--color-primary) 60%, var(--border));
+      }
+      .tip {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 6px;
+      }
+
+      .result-list {
+        display: grid;
+        gap: 10px;
+      }
+      .result-item {
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: color-mix(in oklab, var(--surface) 96%, rgba(37,99,235,0.06));
+        box-shadow: var(--shadow-sm);
+      }
+      .result-title {
+        font-weight: 700;
+        font-size: 13px;
+        margin-bottom: 6px;
+        color: var(--color-primary);
+      }
+      .result-text {
+        font-size: 13px;
+        color: var(--text-muted);
+      }
+
+      /* Footer */
+      footer.app-footer {
+        border-top: 1px solid var(--border);
+        background: color-mix(in oklab, var(--surface) 80%, transparent);
+      }
+      .footer-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 14px 20px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
+      .footer-right {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      .link {
+        color: var(--color-primary);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .link:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="navbar">
+        <div class="nav-inner">
+          <a class="brand" href="/">
+            <div class="brand-mark">BD</div>
+            <div class="brand-title">Bug Detector</div>
+          </a>
+          <div class="nav-spacer"></div>
+          <div class="nav-actions">
+            <span class="pill">Ocean Professional</span>
+            <ThemeToggle />
+          </div>
+        </div>
+      </header>
+
+      <main class="app-main">
+        <slot />
+      </main>
+
+      <footer class="app-footer">
+        <div class="footer-inner">
+          <div>© {new Date().getFullYear()} Bug Detector. All rights reserved.</div>
+          <div class="footer-right">
+            <a class="link" href="#">Docs</a>
+            <a class="link" href="#">Changelog</a>
+          </div>
+        </div>
+      </footer>
+    </div>
+  </body>
 </html>
-
-<style>
-	:root {
-		/* Light theme variables */
-		--bg-color: #ffffff;
-		--text-color: #111827;
-		--text-secondary: #4b5563;
-		--border-color: rgba(0, 0, 0, 0.1);
-		--card-bg: rgba(255, 255, 255, 1);
-		--card-hover-bg: rgba(255, 255, 255, 0.55);
-		--shadow-color: rgba(0, 0, 0, 0.1);
-		--shadow-hover-color: rgba(0, 0, 0, 0.15);
-	}
-
-	body.dark-theme {
-		/* Dark theme variables */
-		--bg-color: #111827;
-		--text-color: #f9fafb;
-		--text-secondary: #d1d5db;
-		--border-color: rgba(255, 255, 255, 0.2);
-		--card-bg: rgba(31, 41, 55, 0.9);
-		--card-hover-bg: rgba(31, 41, 55, 0.7);
-		--shadow-color: rgba(0, 0, 0, 0.3);
-		--shadow-hover-color: rgba(0, 0, 0, 0.4);
-	}
-
-	html,
-	body {
-		margin: 0;
-		width: 100%;
-		height: 100%;
-		background-color: var(--bg-color);
-		color: var(--text-color);
-		transition: background-color 0.3s ease, color 0.3s ease;
-	}
-</style>

@@ -1,11 +1,54 @@
 ---
-import Welcome from '../components/Welcome.astro';
 import Layout from '../layouts/Layout.astro';
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
 ---
 
 <Layout>
-	<Welcome />
+  <section class="split">
+    <!-- Code Input Panel -->
+    <article class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Code Input</div>
+      </div>
+      <div class="panel-body">
+        <label for="code" class="sr-only">Paste your code</label>
+        <textarea id="code" class="textarea" placeholder="Paste your code snippet here..."></textarea>
+        <div class="controls">
+          <button class="btn btn-primary" type="button">Analyze</button>
+          <button class="btn" type="button">Clear</button>
+          <button class="btn" type="button">Load Sample</button>
+        </div>
+        <p class="tip">Tip: Your code never leaves your browser in mock mode. Backend integration will be added later.</p>
+      </div>
+    </article>
+
+    <!-- Results Panel -->
+    <aside class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Results</div>
+      </div>
+      <div class="panel-body">
+        <div class="result-list">
+          <div class="result-item">
+            <div class="result-title">No analysis yet</div>
+            <div class="result-text">Run “Analyze” to see potential bugs and suggestions here.</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </section>
+
+  <style>
+    /* Accessibility helper */
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+      white-space: nowrap;
+    }
+  </style>
 </Layout>
